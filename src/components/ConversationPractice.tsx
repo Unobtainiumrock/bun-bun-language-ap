@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { ConversationLayout } from '@/components/ConversationLayout';
 import { aiService } from '@/services/aiService';
 import type { Message } from '@/types/mistakes';
@@ -9,11 +9,27 @@ export function ConversationPractice() {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { mistakes, processMistakesFromConversation } = useMistakeTracker();
+  const messagesRef = useRef<Message[]>([]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     try {
       setIsLoading(true);
       setInputValue('');
+
+      // Build conversation history from previous messages (last 10 messages for context)
+      // Do this before adding the new message so we have the correct history
+      const previousMessages = messagesRef.current;
+      const conversationHistory = previousMessages
+        .slice(-10)
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
 
       // Add user message
       const userMessage: Message = {
@@ -27,7 +43,8 @@ export function ConversationPractice() {
 
       // Get AI response
       console.log('🤖 Sending message to AI:', message);
-      const response = await aiService.sendChatMessage(message, 'frenchTutor');
+      
+      const response = await aiService.sendChatMessage(message, 'frenchTutor', conversationHistory);
       console.log('📥 Received AI response:', response);
       
       // Process corrections and add to database
@@ -59,10 +76,12 @@ export function ConversationPractice() {
 
     } catch (error) {
       console.error('❌ Error sending message:', error);
-      // Add error message
+      // Add error message with more details
       const errorMessage: Message = {
         id: Date.now().toString(),
-        content: "Désolé, j'ai rencontré une erreur. Pouvez-vous réessayer?",
+        content: error instanceof Error 
+          ? `Désolé, j'ai rencontré une erreur: ${error.message}. Veuillez vérifier votre connexion et réessayer.`
+          : "Désolé, j'ai rencontré une erreur. Pouvez-vous réessayer?",
         role: 'assistant',
         timestamp: new Date(),
         corrections: []

@@ -17,18 +17,30 @@ export class AIService {
   }
 
   private getBaseUrl(): string {
-    // In development (localhost), use relative URLs
-    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    if (typeof window === 'undefined') {
       return '';
+    }
+
+    const hostname = window.location.hostname;
+    const port = window.location.port;
+    
+    // In development, check if we're on Netlify dev server (port 8888)
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      // If port is 8888, we're on Netlify dev - use relative URLs
+      if (port === '8888' || port === '') {
+        return '';
+      }
+      // If port is 5173, we're on Vite dev - need to use Netlify dev port
+      if (port === '5173') {
+        console.warn('⚠️ Running on Vite dev server (port 5173). Netlify functions may not be available.');
+        console.warn('💡 Tip: Use "npm run netlify:dev" to run with functions support on port 8888');
+        // Try to use Netlify dev port
+        return 'http://localhost:8888';
+      }
     }
     
     // In production, use the current origin
-    if (typeof window !== 'undefined') {
-      return window.location.origin;
-    }
-    
-    // Fallback
-    return '';
+    return window.location.origin;
   }
 
 
@@ -37,12 +49,108 @@ export class AIService {
     return this.currentMode;
   }
 
-  async sendChatMessage(message: string, personaKey: string): Promise<ChatResponse> {
+  /**
+   * Health check to verify API connectivity and configuration
+   * Returns diagnostic information about the API setup
+   */
+  async healthCheck(): Promise<{
+    status: 'healthy' | 'unhealthy';
+    baseUrl: string;
+    endpoint: string;
+    diagnostics: {
+      canReachEndpoint: boolean;
+      endpointStatus?: number;
+      error?: string;
+      recommendations: string[];
+    };
+  }> {
+    const endpoint = `${this.baseUrl}/.netlify/functions/chat`;
+    const diagnostics = {
+      canReachEndpoint: false,
+      endpointStatus: undefined as number | undefined,
+      error: undefined as string | undefined,
+      recommendations: [] as string[],
+    };
+
+    // Check if we can reach the endpoint
     try {
-      const url = `${this.baseUrl}/.netlify/functions/chat`;
-      console.log('🤖 Sending message to:', url);
-      console.log('📝 Message:', message);
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'health-check', personaKey: 'frenchTutor' }),
+      });
       
+      diagnostics.canReachEndpoint = true;
+      diagnostics.endpointStatus = response.status;
+      
+      if (response.status === 404) {
+        diagnostics.recommendations.push(
+          'Netlify function not found. Make sure you\'re running "npm run netlify:dev"'
+        );
+      } else if (response.status === 500) {
+        const errorText = await response.text();
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error === 'OpenAI API key not configured') {
+            diagnostics.recommendations.push(
+              'OpenAI API key is missing. Set OPENAI_API_KEY in .env file'
+            );
+          }
+        } catch {
+          diagnostics.recommendations.push('Server error - check Netlify function logs');
+        }
+      }
+    } catch (error) {
+      diagnostics.canReachEndpoint = false;
+      diagnostics.error = error instanceof Error ? error.message : String(error);
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        diagnostics.recommendations.push(
+          'Cannot reach API endpoint. Make sure Netlify dev server is running on port 8888'
+        );
+        diagnostics.recommendations.push(
+          'Use "npm run netlify:dev" instead of "npm run dev" to enable functions'
+        );
+      }
+    }
+
+    // Check current setup
+    if (typeof window !== 'undefined') {
+      const port = window.location.port;
+      if (port === '5173') {
+        diagnostics.recommendations.push(
+          'You\'re on Vite dev server (port 5173). Switch to Netlify dev (port 8888) for API access'
+        );
+      }
+    }
+
+    return {
+      status: diagnostics.canReachEndpoint && diagnostics.endpointStatus === 200 
+        ? 'healthy' 
+        : 'unhealthy',
+      baseUrl: this.baseUrl,
+      endpoint,
+      diagnostics,
+    };
+  }
+
+  async sendChatMessage(
+    message: string, 
+    personaKey: string, 
+    conversationHistory: ChatMessage[] = []
+  ): Promise<ChatResponse> {
+    const url = `${this.baseUrl}/.netlify/functions/chat`;
+    
+    // Diagnostic logging
+    console.log('🔍 API Call Diagnostics:');
+    console.log('  - URL:', url);
+    console.log('  - Base URL:', this.baseUrl);
+    console.log('  - Current location:', typeof window !== 'undefined' ? window.location.href : 'N/A');
+    console.log('  - Port:', typeof window !== 'undefined' ? window.location.port : 'N/A');
+    console.log('  - Message:', message);
+    console.log('  - Conversation history length:', conversationHistory.length);
+    
+    try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -51,6 +159,7 @@ export class AIService {
         body: JSON.stringify({
           message,
           personaKey,
+          conversationHistory,
         }),
       });
 
@@ -60,7 +169,36 @@ export class AIService {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ API Error Response:', errorText);
-        throw new Error(`Failed to get response from AI service: ${response.status} - ${errorText}`);
+        
+        let errorMessage = `API request failed with status ${response.status}`;
+        
+        // Provide specific guidance based on error
+        if (response.status === 404) {
+          errorMessage = `Netlify function not found. Are you running "npm run netlify:dev"? ` +
+                        `The endpoint ${url} is not available. ` +
+                        `Make sure Netlify dev server is running on port 8888.`;
+        } else if (response.status === 500) {
+          try {
+            const errorData = JSON.parse(errorText);
+            if (errorData.error === 'OpenAI API key not configured') {
+              errorMessage = `OpenAI API key is missing. ` +
+                           `Please set OPENAI_API_KEY in your .env file or Netlify environment variables. ` +
+                           `See README-SETUP.md for instructions.`;
+            } else {
+              errorMessage = `Server error: ${errorData.error || errorData.details || errorText}`;
+            }
+          } catch {
+            errorMessage = `Server error: ${errorText}`;
+          }
+        } else if (response.status === 0) {
+          errorMessage = `Network error: Unable to reach the server. ` +
+                        `This usually means: ` +
+                        `1) Netlify dev server is not running (use "npm run netlify:dev"), ` +
+                        `2) CORS issue, or ` +
+                        `3) Network connectivity problem.`;
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -73,74 +211,28 @@ export class AIService {
     } catch (error) {
       console.error('❌ Error in AI service:', error);
       
-      // Update mode and fallback to mock response
-      this.currentMode = 'Mock Mode - Amélie (Offline)';
+      // Update mode to indicate error
+      this.currentMode = 'Error - API Unavailable';
       
-      // Always provide offline fallback for better UX
-      console.log('🔄 Falling back to offline response');
-      return this.getMockResponse(message, personaKey);
+      // Provide detailed error information
+      let errorMessage = 'Unable to connect to the AI service.';
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        errorMessage = `Network error: Cannot reach the API endpoint. ` +
+                      `Possible causes:\n` +
+                      `1. Netlify dev server is not running - use "npm run netlify:dev" instead of "npm run dev"\n` +
+                      `2. Wrong port - make sure you're accessing the app on port 8888\n` +
+                      `3. Functions not available - check that netlify/functions/chat.js exists\n` +
+                      `4. Network connectivity issue\n\n` +
+                      `Current URL: ${url}`;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      } else {
+        errorMessage = `Unknown error: ${String(error)}`;
+      }
+      
+      throw new Error(errorMessage);
     }
-  }
-
-  private getMockResponse(_message: string, personaKey: string): ChatResponse {
-    const mockResponses = {
-      frenchTutor: [
-        {
-          conversation: "Bonjour! Je suis Amélie, votre tutrice de français. Comment puis-je vous aider aujourd'hui?",
-          corrections: [],
-          mode: 'mock',
-          persona: {
-            name: 'Amélie',
-            age: 28,
-            location: 'Paris'
-          }
-        },
-        {
-          conversation: "Je vois quelques erreurs dans votre texte. Voici les corrections nécessaires :",
-          corrections: [
-            {
-              mistakeType: 'grammar',
-              subcategory: 'gender_agreement',
-              severity: 'moderate' as const,
-              userInput: 'un pomme',
-              correction: 'une pomme',
-              explanation: 'En français, "pomme" est un nom féminin, donc on utilise "une" au lieu de "un".',
-              grammarRule: 'Les noms de fruits sont généralement féminins en français.',
-              examples: ['une pomme', 'une poire', 'une banane']
-            },
-            {
-              mistakeType: 'grammar',
-              subcategory: 'number_agreement',
-              severity: 'moderate' as const,
-              userInput: 'deux baguette',
-              correction: 'deux baguettes',
-              explanation: 'En français, les noms au pluriel prennent généralement un "s".',
-              grammarRule: 'La plupart des noms français forment leur pluriel en ajoutant un "s".',
-              examples: ['une baguette → des baguettes', 'un croissant → des croissants']
-            },
-            {
-              mistakeType: 'vocabulary',
-              subcategory: 'anglicisms',
-              severity: 'minor' as const,
-              userInput: 'shopping',
-              correction: 'magasinage',
-              explanation: '"Shopping" est un anglicisme. En français, on utilise "magasinage" ou "faire des courses".',
-              grammarRule: 'Évitez les mots anglais quand il existe un équivalent français.',
-              examples: ['faire du magasinage', 'aller faire des courses']
-            }
-          ],
-          mode: 'mock',
-          persona: {
-            name: 'Amélie',
-            age: 28,
-            location: 'Paris'
-          }
-        }
-      ]
-    };
-
-    const responses = mockResponses[personaKey as keyof typeof mockResponses] || mockResponses.frenchTutor;
-    return responses[Math.floor(Math.random() * responses.length)];
   }
 
   async getFeedback(userInput: string): Promise<ChatResponse> {

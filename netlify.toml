@@ -28,11 +28,30 @@
   # Main port you'll use to access the app (Netlify proxy)
   port = 8888
   
-  # Port for Netlify Functions (same as main port for simplicity)
-  functionsPort = 8888
+  # Port for Netlify Functions (must differ from main port)
+  functionsPort = 9999
   
   # Tell Netlify to target Vite's port
   targetPort = 5173
+
+# Pass through Vite dev server paths (must come before SPA catch-all)
+[[redirects]]
+  from = "/src/*"
+  to = "/src/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/@*"
+  to = "/@:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/node_modules/*"
+  to = "/node_modules/:splat"
+  status = 200
+  force = true
 
 # Redirect rules for SPA (Single Page Application)
 [[redirects]]

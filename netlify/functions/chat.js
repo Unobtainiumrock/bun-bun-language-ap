@@ -194,14 +194,41 @@ export async function handler(event) {
 
   } catch (error) {
     console.error('Chat function error:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Environment check:', {
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+      openAIKeyLength: process.env.OPENAI_API_KEY?.length || 0,
+      nodeEnv: process.env.NODE_ENV
+    });
+    
+    // Provide more detailed error information
+    let errorMessage = 'Internal server error';
+    let errorDetails = error.message;
+    
+    // Check for specific error types
+    if (error.message?.includes('API key')) {
+      errorMessage = 'OpenAI API key error';
+      errorDetails = 'The API key may be invalid or expired. Check your .env file or Netlify environment variables.';
+    } else if (error.message?.includes('timeout')) {
+      errorMessage = 'Request timeout';
+      errorDetails = 'The OpenAI API request timed out. This may be due to network issues or API rate limits.';
+    } else if (error.message?.includes('rate limit')) {
+      errorMessage = 'Rate limit exceeded';
+      errorDetails = 'OpenAI API rate limit reached. Please wait a moment and try again.';
+    }
     
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message,
-        mode: 'error'
+        error: errorMessage,
+        details: errorDetails,
+        mode: 'error',
+        // Only include full error in development
+        ...(process.env.NODE_ENV === 'development' && { 
+          fullError: error.message,
+          stack: error.stack 
+        })
       })
     };
   }
