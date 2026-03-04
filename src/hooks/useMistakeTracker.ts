@@ -1,70 +1,70 @@
-import { useState } from 'react';
-import type { Correction } from '@/types/mistakes';
-import type { ChatResponse } from '@/types/mistakes';
-import { dbUtils } from '@/db';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { mistakeTracker } from '@/services/mistakeTracker';
+import type { Correction, ChatResponse, MistakeType } from '@/types/mistakes';
+
+const VALID_MISTAKE_TYPES: MistakeType[] = [
+  'grammar', 'vocabulary', 'syntax', 'orthography',
+  'pronunciation', 'pragmatic', 'cultural',
+];
+
+function toMistakeType(raw: string): MistakeType {
+  const lower = raw.toLowerCase() as MistakeType;
+  return VALID_MISTAKE_TYPES.includes(lower) ? lower : 'grammar';
+}
 
 export function useMistakeTracker() {
   const [mistakes, setMistakes] = useState<Correction[]>([]);
+  const sessionStarted = useRef(false);
 
-  const processMistakesFromConversation = async (userInput: string, aiResponse: ChatResponse) => {
-    try {
-      console.log('🔄 Starting mistake processing for:', userInput);
-      
-      // Convert AI corrections to our Correction type
-      const newMistakes = aiResponse.corrections.map(correction => ({
-        id: Date.now().toString(),
-        type: correction.mistakeType as any, // TODO: Fix type mapping
-        subcategory: correction.subcategory,
-        severity: correction.severity,
-        userInput: correction.userInput,
-        correction: correction.correction,
-        explanation: correction.explanation,
-        grammarRule: correction.grammarRule || '',
-        examples: correction.examples || []
-      }));
-
-      console.log('📝 Converted corrections:', newMistakes);
-
-      // Add to local state
-      setMistakes(prev => [...prev, ...newMistakes]);
-
-      // Store in database (this automatically updates mistake patterns)
-      let savedCount = 0;
-      for (const mistake of newMistakes) {
-        console.log('💾 Storing mistake in database:', mistake);
-        await dbUtils.recordMistake({
-          sessionId: Date.now().toString(),
-          timestamp: new Date(),
-          category: mistake.type,
-          subcategory: mistake.subcategory,
-          severity: mistake.severity,
-          userInput: mistake.userInput,
-          correction: mistake.correction,
-          explanation: mistake.explanation,
-          context: userInput,
-          isRepeated: false,
-          relatedMistakes: [],
-          detailedCorrection: {
-            originalText: mistake.userInput,
-            correctedText: mistake.correction,
-            diffSegments: [],
-            explanation: mistake.explanation,
-            grammarRule: mistake.grammarRule,
-            examples: mistake.examples
-          }
-        });
-        savedCount++;
-      }
-
-      console.log(`✅ Successfully processed ${savedCount} mistakes`);
-
-    } catch (error) {
-      console.error('❌ Error processing mistakes:', error);
+  useEffect(() => {
+    if (!sessionStarted.current) {
+      sessionStarted.current = true;
+      mistakeTracker.startSession().catch(console.error);
     }
-  };
+    return () => {
+      mistakeTracker.endSession().catch(console.error);
+    };
+  }, []);
+
+  const processMistakesFromConversation = useCallback(
+    async (userInput: string, aiResponse: ChatResponse) => {
+      try {
+        const newCorrections: Correction[] = aiResponse.corrections.map(c => ({
+          id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+          type: toMistakeType(c.mistakeType),
+          subcategory: c.subcategory,
+          severity: c.severity,
+          userInput: c.userInput,
+          correction: c.correction,
+          explanation: c.explanation,
+          grammarRule: c.grammarRule || '',
+          examples: c.examples || [],
+        }));
+
+        setMistakes(prev => [...prev, ...newCorrections]);
+
+        await mistakeTracker.processMistakesFromConversation(
+          userInput,
+          JSON.stringify(aiResponse),
+        );
+      } catch (error) {
+        console.error('Error processing mistakes:', error);
+      }
+    },
+    [],
+  );
+
+  const getFocusAreas = useCallback(() => mistakeTracker.getFocusAreas(), []);
+  const getAnalysis = useCallback(
+    (timeframe: 'week' | 'month' | 'all' = 'month') =>
+      mistakeTracker.getMistakeAnalysis(timeframe),
+    [],
+  );
 
   return {
     mistakes,
-    processMistakesFromConversation
+    processMistakesFromConversation,
+    getFocusAreas,
+    getAnalysis,
   };
-} 
+}

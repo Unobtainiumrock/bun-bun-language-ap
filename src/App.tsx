@@ -27,16 +27,11 @@ function App() {
         // Sync any pending feedback when app starts
         if (navigator.onLine) {
           try {
-            const syncResult = await dbUtils.syncFeedbackToServer();
-            if (syncResult.success > 0) {
-              console.log(`📤 Synced ${syncResult.success} feedback items to server`);
-            }
-          } catch (error) {
-            console.log('📤 Feedback sync will retry later');
+            await dbUtils.syncFeedbackToServer();
+          } catch {
+            // Feedback sync will retry later
           }
         }
-        
-        console.log('App initialized successfully');
       } catch (error) {
         console.error('Failed to initialize app:', error);
       }
@@ -47,12 +42,9 @@ function App() {
     // Sync feedback when coming back online
     const handleOnline = async () => {
       try {
-        const syncResult = await dbUtils.syncFeedbackToServer();
-        if (syncResult.success > 0) {
-          console.log(`📤 Synced ${syncResult.success} feedback items when back online`);
-        }
-      } catch (error) {
-        console.log('📤 Feedback sync failed, will retry later');
+        await dbUtils.syncFeedbackToServer();
+      } catch {
+        // Feedback sync will retry later
       }
     };
 

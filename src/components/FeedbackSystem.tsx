@@ -1,22 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, Bug, Lightbulb, Heart, Star, Send, X, CheckCircle } from 'lucide-react';
-import { db } from '@/db';
-
-interface FeedbackEntry {
-  id?: number;
-  type: 'bug' | 'feature' | 'improvement' | 'general';
-  rating: number;
-  title: string;
-  description: string;
-  userContext?: {
-    sessionId?: string;
-    lastMistakeCount?: number;
-    currentScreen?: string;
-    timestamp: Date;
-  };
-  submitted: boolean;
-  createdAt: Date;
-}
+import { db, type UserFeedback } from '@/db';
 
 interface FeedbackSystemProps {
   trigger?: 'manual' | 'session-end' | 'error' | 'milestone';
@@ -35,13 +19,14 @@ export const FeedbackSystem: React.FC<FeedbackSystemProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState<'type' | 'rating' | 'details' | 'success'>('type');
-  const [feedback, setFeedback] = useState<Partial<FeedbackEntry>>({
+  const [feedback, setFeedback] = useState<Partial<UserFeedback>>({
     type: 'general',
     rating: 5,
     title: '',
     description: '',
     submitted: false,
-    createdAt: new Date()
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
   // Auto-open based on triggers
@@ -88,17 +73,24 @@ export const FeedbackSystem: React.FC<FeedbackSystemProps> = ({
 
   const handleSubmit = async () => {
     try {
-      const feedbackEntry: FeedbackEntry = {
+      const now = new Date();
+      const feedbackEntry: UserFeedback = {
         ...feedback,
+        type: feedback.type || 'general',
+        rating: feedback.rating || 5,
+        title: feedback.title || '',
+        description: feedback.description || '',
         userContext: {
           sessionId: context?.sessionId,
           lastMistakeCount: context?.mistakeCount,
           currentScreen: context?.currentScreen || window.location.pathname,
-          timestamp: new Date()
+          timestamp: now,
         },
         submitted: true,
-        createdAt: new Date()
-      } as FeedbackEntry;
+        synced: false,
+        createdAt: now,
+        updatedAt: now,
+      };
 
       // Store feedback in IndexedDB for offline support
       await db.table('userFeedback').add(feedbackEntry);
@@ -121,10 +113,10 @@ export const FeedbackSystem: React.FC<FeedbackSystemProps> = ({
     }
   };
 
-  const submitToServer = async (feedbackEntry: FeedbackEntry) => {
+  const submitToServer = async (feedbackEntry: UserFeedback) => {
     try {
       // Submit to Google Apps Script instead of Netlify function
-      const response = await fetch(process.env.REACT_APP_GOOGLE_SCRIPT_URL || '', {
+      const response = await fetch(import.meta.env.VITE_GOOGLE_SCRIPT_URL || '', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -166,7 +158,8 @@ export const FeedbackSystem: React.FC<FeedbackSystemProps> = ({
       title: '',
       description: '',
       submitted: false,
-      createdAt: new Date()
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
     onClose?.();
   };

@@ -117,13 +117,6 @@ IMPORTANT:
 - Mix formal teaching with friendly chat
 - NEVER overwhelm with too many corrections at once`
   },
-
-  // Future personas can be added here
-  spanishTutor: {
-    // Could add Spanish tutor persona later
-    name: "Carlos",
-    // ... similar structure
-  }
 };
 
 // Helper function to get persona by key

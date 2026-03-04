@@ -1,8 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ConversationLayout } from '@/components/ConversationLayout';
 import { aiService } from '@/services/aiService';
-import type { Message } from '@/types/mistakes';
+import type { Message, MistakeType } from '@/types/mistakes';
 import { useMistakeTracker } from '@/hooks/useMistakeTracker';
+
+const VALID_MISTAKE_TYPES: MistakeType[] = [
+  'grammar', 'vocabulary', 'syntax', 'orthography',
+  'pronunciation', 'pragmatic', 'cultural',
+];
+
+function toMistakeType(raw: string): MistakeType {
+  const lower = raw.toLowerCase() as MistakeType;
+  return VALID_MISTAKE_TYPES.includes(lower) ? lower : 'grammar';
+}
 
 export function ConversationPractice() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -41,15 +51,9 @@ export function ConversationPractice() {
       };
       setMessages(prev => [...prev, userMessage]);
 
-      // Get AI response
-      console.log('🤖 Sending message to AI:', message);
-      
       const response = await aiService.sendChatMessage(message, 'frenchTutor', conversationHistory);
-      console.log('📥 Received AI response:', response);
-      
-      // Process corrections and add to database
+
       if (response.corrections && response.corrections.length > 0) {
-        console.log('🔍 Processing corrections:', response.corrections);
         await processMistakesFromConversation(message, response);
       }
 
@@ -61,7 +65,7 @@ export function ConversationPractice() {
         timestamp: new Date(),
         corrections: response.corrections?.map(correction => ({
           id: Date.now().toString(),
-          type: correction.mistakeType as any, // TODO: Fix type mapping
+          type: toMistakeType(correction.mistakeType),
           subcategory: correction.subcategory,
           severity: correction.severity,
           userInput: correction.userInput,
@@ -71,11 +75,10 @@ export function ConversationPractice() {
           examples: correction.examples || []
         })) || []
       };
-      console.log('💬 Adding AI message to conversation:', aiMessage);
       setMessages(prev => [...prev, aiMessage]);
 
     } catch (error) {
-      console.error('❌ Error sending message:', error);
+      console.error('Error sending message:', error);
       // Add error message with more details
       const errorMessage: Message = {
         id: Date.now().toString(),

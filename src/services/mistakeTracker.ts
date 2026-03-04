@@ -5,6 +5,10 @@ import type {
   DetailedCorrection
 } from '@/types/mistakes';
 import { createDiffSegments } from '@/types/mistakes';
+
+const DEBUG = import.meta.env.DEV;
+function log(...args: unknown[]) { if (DEBUG) console.log(...args); }
+
 export interface AIResponse {
   response: string;
   mistakes?: Mistake[];
@@ -26,10 +30,9 @@ export class MistakeTracker {
       const jsonMatch = aiResponseText.match(/\{[\s\S]*\}/);
       
       if (jsonMatch) {
-        console.log('🔍 Found JSON in response, attempting to parse...');
         const jsonStr = jsonMatch[0];
         const parsed: AIResponse = JSON.parse(jsonStr);
-        console.log('✅ Parsed JSON successfully:', parsed.mistakes?.length || 0, 'mistakes');
+        log('Parsed JSON, mistakes:', parsed.mistakes?.length || 0);
         
         return {
           conversationalResponse: parsed.response || aiResponseText,
@@ -38,9 +41,8 @@ export class MistakeTracker {
       }
       
       // Fallback: try to parse legacy format or return no mistakes
-      console.log('🔍 No JSON found, trying legacy parsing...');
       const legacyMistakes = this.parseLegacyFormat(aiResponseText);
-      console.log('📊 Legacy parsing found:', legacyMistakes.length, 'mistakes');
+      log('Legacy parsing found:', legacyMistakes.length, 'mistakes');
       
       return {
         conversationalResponse: aiResponseText,

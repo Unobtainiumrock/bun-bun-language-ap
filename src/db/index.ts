@@ -77,11 +77,6 @@ class FrenchAppDB extends Dexie {
       aiCache: '++id, requestHash, timestamp, expiresAt',
       userFeedback: '++id, type, rating, submitted, synced, createdAt, updatedAt'
     });
-
-    this.version(3).upgrade(_tx => {
-      console.log('Upgrading database to version 3: Streamlined mistake tracking...');
-      // Migration logic would go here if needed
-    });
   }
 }
 
@@ -92,7 +87,7 @@ export const db = new FrenchAppDB();
 export const dbUtils = {
   // Initialize database 
   async initializeDB() {
-    console.log('Database initialized for mistake tracking');
+    // DB ready
   },
 
   // Reset database completely including auto-increment counters
@@ -104,7 +99,7 @@ export const dbUtils = {
       // Recreate the database with fresh tables
       await db.open();
       
-      console.log('Database completely reset');
+      // reset complete
     } catch (error) {
       console.error('Error resetting database:', error);
       throw error;
@@ -262,7 +257,6 @@ export const dbUtils = {
     };
     
     const feedbackId = await db.userFeedback.add(feedbackRecord);
-    console.log('📝 Feedback stored locally:', feedbackId);
     
     return feedbackId;
   },
@@ -319,10 +313,10 @@ export const dbUtils = {
     let failed = 0;
 
     // Get Google Apps Script URL from environment
-    const googleScriptUrl = process.env.REACT_APP_GOOGLE_SCRIPT_URL;
+    const googleScriptUrl = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
     
     if (!googleScriptUrl) {
-      console.log('📊 Google Apps Script URL not configured, skipping sync');
+      // Google Apps Script URL not configured, skipping sync
       return { success: 0, failed: unsyncedFeedback.length };
     }
 

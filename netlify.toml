@@ -32,7 +32,7 @@
   functionsPort = 9999
   
   # Tell Netlify to target Vite's port
-  targetPort = 5173
+  targetPort = 5180
 
 # Pass through Vite dev server paths (must come before SPA catch-all)
 [[redirects]]
